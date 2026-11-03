@@ -244,13 +244,41 @@ async function handleProxy(request, url, env) {
     request.headers.get("User-Agent") || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"
   );
 
+  const isHead = request.method === "HEAD";
+  const isSigV4 = parsed.searchParams.has("X-Amz-Signature") || parsed.searchParams.has("X-Amz-Algorithm");
+
   let upstream;
+  let simulatedHead = false;
+
   try {
-    upstream = await fetch(targetUrl, {
-      method: request.method === "HEAD" ? "HEAD" : "GET",
-      headers: fwdHeaders,
-      redirect: "follow",
-    });
+    // S3/R2 presigned URLs are signed for GET only; sending HEAD to them results in 403 Forbidden.
+    // If the client wants HEAD on an S3 presigned URL, or if HEAD returns 403/405, fall back to GET bytes=0-0.
+    if (isHead && isSigV4) {
+      simulatedHead = true;
+      fwdHeaders.set("Range", "bytes=0-0");
+      upstream = await fetch(targetUrl, {
+        method: "GET",
+        headers: fwdHeaders,
+        redirect: "follow",
+      });
+    } else {
+      upstream = await fetch(targetUrl, {
+        method: isHead ? "HEAD" : "GET",
+        headers: fwdHeaders,
+        redirect: "follow",
+      });
+
+      // If HEAD failed with 403 or 405 (common for pre-signed URLs or CDNs), retry with GET bytes=0-0
+      if (isHead && (upstream.status === 403 || upstream.status === 405)) {
+        simulatedHead = true;
+        fwdHeaders.set("Range", "bytes=0-0");
+        upstream = await fetch(targetUrl, {
+          method: "GET",
+          headers: fwdHeaders,
+          redirect: "follow",
+        });
+      }
+    }
   } catch (err) {
     return jsonResponse({ error: "Upstream fetch failed: " + err.message }, 502);
   }
@@ -280,10 +308,35 @@ async function handleProxy(request, url, env) {
     if (val) outHeaders.set(h, val);
   }
 
+  // If this was a simulated HEAD request using GET bytes=0-0:
+  // Extract total file size from Content-Range (e.g., bytes 0-0/2174126278) and set Content-Length!
+  if (simulatedHead) {
+    const cr = upstream.headers.get("Content-Range");
+    if (cr) {
+      const match = /\/\s*(\d+)\s*$/.exec(cr);
+      if (match) {
+        outHeaders.set("Content-Length", match[1]);
+      }
+    }
+    outHeaders.set("Accept-Ranges", "bytes");
+    try { upstream.body?.cancel(); } catch {}
+    return new Response(null, {
+      status: 200,
+      headers: outHeaders,
+    });
+  }
+
   let body = upstream.body;
-  // Sniff magic bytes if stream starts at 0
-  const startsAtZero = !range || range.startsWith("bytes=0-");
-  if (request.method !== "HEAD" && startsAtZero && body) {
+  // Sniff magic bytes only if stream starts at 0 AND has enough bytes (>= 32 bytes).
+  // A tiny probe like bytes=0-0 or bytes=0-1 is used to detect file size / range support;
+  // sniffing it would falsely fail with 415.
+  const zeroRange = range ? /^bytes=0-(\d*)$/i.exec(range.trim()) : null;
+  const hasEnoughBytesToSniff =
+    !range ||
+    (!!zeroRange &&
+      (zeroRange[1] === "" || parseInt(zeroRange[1], 10) >= MAGIC_SNIFF_SIZE - 1));
+
+  if (!isHead && hasEnoughBytesToSniff && body) {
     const sniffed = await sniffAndPassthrough(body);
     if (!sniffed.ok) {
       return jsonResponse({ error: "Invalid video or audio container format" }, 415);
@@ -291,7 +344,7 @@ async function handleProxy(request, url, env) {
     body = sniffed.stream;
   }
 
-  return new Response(request.method === "HEAD" ? null : body, {
+  return new Response(isHead ? null : body, {
     status: upstream.status,
     headers: outHeaders,
   });

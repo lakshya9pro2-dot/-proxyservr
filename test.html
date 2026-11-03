@@ -55,28 +55,41 @@
     <p>Paste any direct video URL (Cloudflare R2, S3, MKV, MP4) below to stream through your proxy.</p>
     
     <div style="display: flex; gap: 8px;">
-      <input id="videoUrl" placeholder="https://your-bucket.r2.cloudflarestorage.com/video.mkv" />
+      <input id="videoUrl" value="https://701ab416771ea1b49a24683d35a33206.r2.cloudflarestorage.com/hub/Obsession.2025.1080p.WEB-DL.Hindi.JHS.New.Dubb.English.2.0.ESub.x264-HDHub4u.Ag.mkv?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=9117075ae9ab2bd2c1b64fc58debeee0%2F20261103%2Fauto%2Fs3%2Faws4_request&X-Amz-Date=20261103T034006Z&X-Amz-Expires=18000&X-Amz-SignedHeaders=host&response-content-disposition=attachment%3B%20filename%3D%22Obsession.2025.1080p.WEB-DL.Hindi.JHS.New.Dubb.English.2.0.ESub.x264-HDHub4u.Ag.mkv%22&X-Amz-Signature=39d7c9eb13874cf8f8b7a28094ba4313c66900796a1a0eff6114cb07dae243e4" />
       <button onclick="playVideo()">Stream</button>
     </div>
 
+    <!-- Status / Error log -->
+    <div id="status" style="margin-top: 12px; font-size: 13px; color: #8b949e;">Ready</div>
+
     <!-- The custom movi-player element -->
-    <movi-player id="player" controls></movi-player>
+    <movi-player id="player" controls style="margin-top: 14px;"></movi-player>
   </div>
 
   <script>
-    // Replace this with your deployed Cloudflare Worker URL or http://127.0.0.1:8787 in local dev
-    const WORKER_BASE = window.location.origin;
+    const WORKER_BASE = "https://proxyservr.kineflex-netflex.workers.dev";
+    const statusEl = document.getElementById("status");
+    const player = document.getElementById("player");
+
+    player.addEventListener("loadstart", () => { statusEl.textContent = "Loading stream metadata and WASM demuxer..."; statusEl.style.color = "#58a6ff"; });
+    player.addEventListener("loadeddata", () => { statusEl.textContent = "First frame decoded successfully!"; statusEl.style.color = "#3fb950"; });
+    player.addEventListener("canplay", () => { statusEl.textContent = "Playback ready."; statusEl.style.color = "#3fb950"; });
+    player.addEventListener("error", (e) => { 
+      console.error("Player error:", e);
+      statusEl.textContent = "Player error: " + (e.detail?.message || e.message || "Failed to decode");
+      statusEl.style.color = "#f85149";
+    });
 
     async function playVideo() {
       const rawUrl = document.getElementById("videoUrl").value.trim();
       if (!rawUrl) return alert("Please enter a video URL");
 
-      const player = document.getElementById("player");
+      statusEl.textContent = "Connecting to proxy...";
+      statusEl.style.color = "#d29922";
 
-      // Option 1: Direct mode (if REQUIRE_SIGNATURE = false)
+      // Direct URL
       const directUrl = `${WORKER_BASE}/proxy?url=${encodeURIComponent(rawUrl)}`;
 
-      // Option 2: Signed mode (if REQUIRE_SIGNATURE = true)
       try {
         const res = await fetch(`${WORKER_BASE}/api/proxy-sign`, {
           method: "POST",
@@ -86,15 +99,15 @@
         if (res.ok) {
           const data = await res.json();
           player.src = WORKER_BASE + data.url;
-          player.play();
+          player.play().catch(e => console.log("Autoplay policy:", e));
           return;
         }
       } catch (err) {
-        console.warn("Proxy sign failed, falling back to direct proxy URL:", err);
+        console.warn("Proxy sign failed, using direct:", err);
       }
 
       player.src = directUrl;
-      player.play();
+      player.play().catch(e => console.log("Autoplay policy:", e));
     }
   </script>
 </body>
