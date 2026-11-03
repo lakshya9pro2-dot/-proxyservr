@@ -48,22 +48,32 @@ Example in HTML:
 </movi-player>
 ```
 
-### 2. Signed Mode (`REQUIRE_SIGNATURE = "true"`)
-1. Call `POST /api/proxy-sign`:
+## How to Hide Real Video URLs (AES-256-GCM)
+
+To completely hide your Cloudflare R2 / AWS S3 storage URL from users, DevTools, and page source:
+
+### 1. Mint an Encrypted Stream URL (`POST /api/hide`)
 ```bash
-curl -X POST https://<your-worker>.workers.dev/api/proxy-sign \
+curl -X POST https://<your-worker>.workers.dev/api/hide \
   -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/movie.mkv"}'
+  -d '{"url":"https://701ab416771ea1b49a24683d35a33206.r2.cloudflarestorage.com/hub/movie.mkv?sig=..."}'
 ```
+
 Response:
 ```json
 {
-  "url": "/proxy?url=https%3A%2F%2Fexample.com%2Fmovie.mkv&exp=1793726362694&sig=f8c486...",
-  "expiresAt": 1793726362694
+  "streamUrl": "/stream/movie.mkv?token=6SqeR2e309A65hu3J7rfkLo1KOA_hOdQ...",
+  "rawStreamUrl": "/stream/6SqeR2e309A65hu3J7rfkLo1KOA_hOdQ...",
+  "token": "6SqeR2e309A65hu3J7rfkLo1KOA_hOdQ...",
+  "expiresAt": 1793728376233
 }
 ```
 
-2. Pass the full URL to the player:
+### 2. Pass the Hidden Stream URL to the Player:
 ```html
-<movi-player src="https://<your-worker>.workers.dev/proxy?url=...&exp=...&sig=..." controls></movi-player>
+<movi-player 
+  src="https://<your-worker>.workers.dev/stream/movie.mkv?token=6SqeR2e309A65hu3J7rfkLo1KOA_hOdQ..." 
+  controls>
+</movi-player>
 ```
+**No one can see your real storage bucket URL, S3 credentials, or access keys.** Only the server holding `PROXY_SECRET` can decrypt the token.

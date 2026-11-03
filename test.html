@@ -84,29 +84,31 @@
       const rawUrl = document.getElementById("videoUrl").value.trim();
       if (!rawUrl) return alert("Please enter a video URL");
 
-      statusEl.textContent = "Connecting to proxy...";
+      statusEl.textContent = "Encrypting & hiding real URL...";
       statusEl.style.color = "#d29922";
 
-      // Direct URL
-      const directUrl = `${WORKER_BASE}/proxy?url=${encodeURIComponent(rawUrl)}`;
-
       try {
-        const res = await fetch(`${WORKER_BASE}/api/proxy-sign`, {
+        const res = await fetch(`${WORKER_BASE}/api/hide`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ url: rawUrl })
         });
+
         if (res.ok) {
           const data = await res.json();
-          player.src = WORKER_BASE + data.url;
+          const hiddenUrl = WORKER_BASE + data.streamUrl;
+          console.log("Playing hidden encrypted stream:", hiddenUrl);
+          statusEl.innerHTML = `<strong>Playing with hidden URL:</strong> <code style="word-break: break-all; color: #a5d6ff;">${hiddenUrl}</code>`;
+          player.src = hiddenUrl;
           player.play().catch(e => console.log("Autoplay policy:", e));
           return;
         }
       } catch (err) {
-        console.warn("Proxy sign failed, using direct:", err);
+        console.warn("Failed to hide URL via API, falling back to direct:", err);
       }
 
-      player.src = directUrl;
+      // Fallback
+      player.src = `${WORKER_BASE}/proxy?url=${encodeURIComponent(rawUrl)}`;
       player.play().catch(e => console.log("Autoplay policy:", e));
     }
   </script>
