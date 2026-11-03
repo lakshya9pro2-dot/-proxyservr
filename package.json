@@ -1,0 +1,13 @@
+{
+  "name": "movi-video-proxy",
+  "version": "1.0.0",
+  "description": "CORS-bypassing, range-streaming media proxy for movi-player and web video",
+  "main": "worker.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^3.100.0"
+  }
+}

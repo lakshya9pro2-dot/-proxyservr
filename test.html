@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Movi Player Proxy Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <!-- Load movi-player web component -->
+  <script type="module" src="https://unpkg.com/movi-player@latest/dist/element.js"></script>
+  <style>
+    body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+    .container {
+      width: 100%;
+      max-width: 900px;
+    }
+    input {
+      width: calc(100% - 140px);
+      padding: 12px 14px;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      color: #fff;
+      font-size: 14px;
+    }
+    button {
+      padding: 12px 20px;
+      background: #238636;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    button:hover { background: #2ea043; }
+    movi-player {
+      width: 100%;
+      aspect-ratio: 16/9;
+      margin-top: 24px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #000;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Movi Player CORS Streaming Test</h2>
+    <p>Paste any direct video URL (Cloudflare R2, S3, MKV, MP4) below to stream through your proxy.</p>
+    
+    <div style="display: flex; gap: 8px;">
+      <input id="videoUrl" placeholder="https://your-bucket.r2.cloudflarestorage.com/video.mkv" />
+      <button onclick="playVideo()">Stream</button>
+    </div>
+
+    <!-- The custom movi-player element -->
+    <movi-player id="player" controls></movi-player>
+  </div>
+
+  <script>
+    // Replace this with your deployed Cloudflare Worker URL or http://127.0.0.1:8787 in local dev
+    const WORKER_BASE = window.location.origin;
+
+    async function playVideo() {
+      const rawUrl = document.getElementById("videoUrl").value.trim();
+      if (!rawUrl) return alert("Please enter a video URL");
+
+      const player = document.getElementById("player");
+
+      // Option 1: Direct mode (if REQUIRE_SIGNATURE = false)
+      const directUrl = `${WORKER_BASE}/proxy?url=${encodeURIComponent(rawUrl)}`;
+
+      // Option 2: Signed mode (if REQUIRE_SIGNATURE = true)
+      try {
+        const res = await fetch(`${WORKER_BASE}/api/proxy-sign`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: rawUrl })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          player.src = WORKER_BASE + data.url;
+          player.play();
+          return;
+        }
+      } catch (err) {
+        console.warn("Proxy sign failed, falling back to direct proxy URL:", err);
+      }
+
+      player.src = directUrl;
+      player.play();
+    }
+  </script>
+</body>
+</html>

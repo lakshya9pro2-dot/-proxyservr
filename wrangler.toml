@@ -1,0 +1,11 @@
+name = "movi-video-proxy"
+main = "worker.js"
+compatibility_date = "2024-04-01"
+
+[vars]
+# Change this to your own random secret key:
+PROXY_SECRET = "change-this-to-a-secure-secret-key-12345"
+
+# "true" = requires /api/proxy-sign signatures (production safe, prevents bandwidth abuse)
+# "false" = direct streaming without signatures (convenient for private/local use)
+REQUIRE_SIGNATURE = "false"
